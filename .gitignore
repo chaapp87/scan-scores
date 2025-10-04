@@ -1,0 +1,56 @@
+# group_vars/all
+Cache*
+Code Cache
+Crash Reports
+GPUCache
+blob_storage
+Backups
+Local Storage
+logs
+Service Worker
+Session Storage
+User
+.vscode
+# run-roles.yaml
+group_vars/all
+#roles/obs/files/*/obs-studio
+roles/obs/files/*/obs-studio/profiler_data
+roles/obs/files/*/obs-studio/logs
+roles/qtile/files/rd-pc-work/qtile/__pycache__/config.cpython-38.pyc
+
+**/__pycache__
+*.pyc
+
+# Emcas
+vault-pssword.gpg
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Org-mode
+.org-id-locations
+*_archive
+
+# eshell files
+**/emacs.d/eshell/history
+**/emacs.d/eshell/lastdir
+
+**/emacs.d/elpa/
+**/emacs.d/.cache
+**/emcas.d/transient
+**/emacs.d/recentf
+curl-cookie-jar
+chaapp.el
+**/emacs.d/.local
+vault_pass
+vault-password.gpg
+**/sync-privatetodos.sh
+
+
+
+
