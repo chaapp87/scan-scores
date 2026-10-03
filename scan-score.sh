@@ -321,7 +321,7 @@ create_pdf() {
     local output_path=$1
     shift
     if (( $# == 0 )); then
-        echo "Warnung: Keine JPG-Dateien fuer $output_path gefunden." >&2
+        echo "Warnung: Keine Eingabedateien fuer $output_path gefunden." >&2
         return 1
     fi
     convert "$@" "$output_path"
@@ -346,41 +346,57 @@ write_import_csv() {
     fi
 }
 
+get_combined_inputs() {
+    local manifest_part manifest_start manifest_end original_stimme=$STIMME
+    COMBINED_INPUTS=()
+    MISSING_COMBINED_PARTS=()
+
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+        [[ -z "$manifest_part" ]] && continue
+        STIMME=$manifest_part
+        get_part_images
+        if (( ${#PART_IMAGE_FILES[@]} > 0 )); then
+            COMBINED_INPUTS+=("${PART_IMAGE_FILES[@]}")
+        elif [[ -f "$TITLE-$manifest_part.pdf" ]]; then
+            # Older score folders may no longer have the original JPGs.
+            COMBINED_INPUTS+=("$TITLE-$manifest_part.pdf")
+        else
+            MISSING_COMBINED_PARTS+=("$manifest_part")
+        fi
+    done < "$MANIFEST_FILE"
+    STIMME=$original_stimme
+}
+
 update_combined_pdfs() {
-    local combined_pdf base_pdf temp_pdf
-    get_all_images
-    if (( ${#IMAGE_FILES[@]} == 0 )); then
-        echo "Warnung: Keine Scans fuer kombinierte PDFs gefunden." >&2
-        return 1
-    fi
+    local base_pdf temp_pdf
+    get_combined_inputs
 
-    temp_pdf=$(mktemp --tmpdir=. ".scan-combined.XXXXXX.pdf")
-
-    # With the current workflow all source JPGs are available. For an older
-    # folder, only the newly scanned JPGs exist, so append them to the old PDF
-    # instead of silently dropping the already scanned pages.
-    if (( PAGE == ${#IMAGE_FILES[@]} )); then
-        create_pdf "$temp_pdf" "${IMAGE_FILES[@]}" || {
-            rm -f -- "$temp_pdf"
-            return 1
-        }
-    else
+    # If neither source JPGs nor per-voice PDFs are available, use an old
+    # combined PDF as the base and append the currently available scans.
+    if (( ${#MISSING_COMBINED_PARTS[@]} > 0 )); then
         base_pdf=""
         if [[ -f "$TOTAL_PDF" ]]; then
             base_pdf=$TOTAL_PDF
         elif [[ -f "$GROUP_PDF" ]]; then
             base_pdf=$GROUP_PDF
         fi
-        if [[ -z "$base_pdf" ]]; then
-            echo "Fehler: Vorhandene Seiten sind nicht als JPG oder PDF vorhanden." >&2
-            rm -f -- "$temp_pdf"
-            return 1
+        if [[ -n "$base_pdf" ]]; then
+            get_all_images
+            COMBINED_INPUTS=("$base_pdf" "${IMAGE_FILES[@]}")
+        else
+            echo "Warnung: Folgende Stimmen konnten nicht aus JPG oder eigener PDF rekonstruiert werden: ${MISSING_COMBINED_PARTS[*]}" >&2
         fi
-        create_pdf "$temp_pdf" "$base_pdf" "${IMAGE_FILES[@]}" || {
-            rm -f -- "$temp_pdf"
-            return 1
-        }
     fi
+    if (( ${#COMBINED_INPUTS[@]} == 0 )); then
+        echo "Warnung: Keine Eingabedateien fuer kombinierte PDFs gefunden." >&2
+        return 1
+    fi
+
+    temp_pdf=$(mktemp --tmpdir=. ".scan-combined.XXXXXX.pdf")
+    create_pdf "$temp_pdf" "${COMBINED_INPUTS[@]}" || {
+        rm -f -- "$temp_pdf"
+        return 1
+    }
 
     echo "Aktualisiere $TOTAL_PDF und $GROUP_PDF"
     mv -- "$temp_pdf" "$TOTAL_PDF"
