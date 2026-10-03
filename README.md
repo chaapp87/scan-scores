@@ -94,3 +94,22 @@ Sammlung und Instrumentengruppe.
 chmod 744 scan-score.sh
 ./scan-score.sh
 ```
+
+### Nachtraeglich weitere Stimmen scannen
+
+Das Skript kann fuer dasselbe Stueck mehrfach ausgefuehrt werden. Beim zweiten
+Lauf den bereits vorhandenen Titelordner auswaehlen und die vorhandenen
+Metadaten uebernehmen. Der letzte abgeschlossene Seitenstand wird aus
+`.scan-parts.tsv` fortgesetzt; neue Stimmen werden an die Gesamt-PDF angehaengt.
+
+Pro Titelordner werden folgende Dateien fortgeschrieben:
+
+- `scans/`: JPG-Quelldateien fuer spaetere PDF-Aktualisierungen.
+- `.scan-metadata`: Artist, Genre und Composer fuer spaetere Laeufe.
+- `.scan-parts.tsv`: Zuordnung von Stimme und Seitenbereich.
+- `import.csv`: MobileSheets-Import mit allen bisher gescannten Stimmen.
+- `<Titel>-Gesamt.pdf`: alle bisher gescannten Seiten in Scan-Reihenfolge.
+- `<Titel>-Schlagwerk.pdf`: die Schlagwerk-Gesamtdatei.
+
+Die JPG-Quelldateien bleiben absichtlich im Unterordner `scans/`. Sie werden
+fuer die Neuerstellung der kombinierten PDFs bei spaeteren Scans benoetigt.
