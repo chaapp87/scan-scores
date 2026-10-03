@@ -138,6 +138,20 @@ default_part_group() {
     esac
 }
 
+resolve_part_group() {
+    local part=$1
+    local group=${2:-}
+
+    case "$part" in
+        *Klarinett*|*Flöte*|*Oboe*|*Fagott*|*Saxophon*|*Flügelhorn*|*Fluegelhorn*|*Trompete*|*Horn*|*Tenorhorn*|*Posaune*|*Tuba*)
+            printf '%s\n' "Andere"
+            ;;
+        *)
+            [[ -n "$group" ]] && printf '%s\n' "$group" || default_part_group "$part"
+            ;;
+    esac
+}
+
 migrate_manifest_from_import() {
     local csv_title csv_pages ignored collection artist albums genre composer
     local source_type custom_group start_page end_page manifest_group
@@ -154,8 +168,7 @@ migrate_manifest_from_import() {
         else
             continue
         fi
-        manifest_group=$custom_group
-        [[ -z "$manifest_group" || "$manifest_group" == "$INSTRUMENTGROUP" ]] && manifest_group=$(default_part_group "$source_type")
+        manifest_group=$(resolve_part_group "$source_type" "$custom_group")
         printf '%s\t%s\t%s\t%s\n' "$source_type" "$start_page" "$end_page" "$manifest_group" >> "$MANIFEST_FILE"
     done < "$IMPORT_FILE"
 }
@@ -216,7 +229,7 @@ deduplicate_manifest() {
     manifest_tmp=$(mktemp --tmpdir=. ".scan-parts.XXXXXX")
     while IFS=$'\t' read -r part start_page end_page part_group; do
         [[ -z "$part" ]] && continue
-        [[ -z "$part_group" ]] && part_group=$(default_part_group "$part")
+        part_group=$(resolve_part_group "$part" "$part_group")
         duplicate=0
         for seen in "${seen_parts[@]}"; do
             if [[ "$seen" == "$part" ]]; then
@@ -250,10 +263,10 @@ replace_manifest_part() {
     manifest_tmp=$(mktemp --tmpdir=. ".scan-parts.XXXXXX")
     while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         [[ -z "$manifest_part" ]] && continue
-        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
+        manifest_group=$(resolve_part_group "$manifest_part" "$manifest_group")
         if [[ "$manifest_part" == "$STIMME" ]]; then
             if (( replaced == 0 )); then
-                printf '%s\t%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" "$PART_GROUP" >> "$manifest_tmp"
+                printf '%s\t%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" "$(resolve_part_group "$STIMME" "$PART_GROUP")" >> "$manifest_tmp"
                 replaced=1
             fi
         else
@@ -261,7 +274,7 @@ replace_manifest_part() {
         fi
     done < "$MANIFEST_FILE"
     if (( replaced == 0 )); then
-        printf '%s\t%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" "$PART_GROUP" >> "$manifest_tmp"
+        printf '%s\t%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" "$(resolve_part_group "$STIMME" "$PART_GROUP")" >> "$manifest_tmp"
     fi
     mv -- "$manifest_tmp" "$MANIFEST_FILE"
 }
@@ -304,7 +317,7 @@ normalize_manifest_and_sources() {
         [[ -z "$manifest_part" ]] && continue
         STIMME=$manifest_part
         get_part_images
-        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
+        manifest_group=$(resolve_part_group "$manifest_part" "$manifest_group")
 
         if (( ${#PART_IMAGE_FILES[@]} > 0 )); then
             start_page=$((page + 1))
@@ -366,7 +379,7 @@ write_import_csv() {
     printf '%s\n' "title;pages;setlists;collections;artist;albums;genres;composer;source types;custom groups" > "$IMPORT_FILE"
     while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         [[ -z "$manifest_part" ]] && continue
-        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
+        manifest_group=$(resolve_part_group "$manifest_part" "$manifest_group")
         printf '%s;%s-%s;;%s;%s;;%s;%s;%s;%s\n' \
             "$TITLE" "$manifest_start" "$manifest_end" "$COLLECTION" \
             "$ARTIST" "$GENRE" "$COMPOSER" "$manifest_part" "$manifest_group" >> "$IMPORT_FILE"
@@ -387,7 +400,7 @@ get_combined_inputs() {
 
     while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         [[ -z "$manifest_part" ]] && continue
-        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
+        manifest_group=$(resolve_part_group "$manifest_part" "$manifest_group")
         if [[ "$part_filter" == "schlagwerk" && "$manifest_group" != "$INSTRUMENTGROUP" ]]; then
             continue
         fi
