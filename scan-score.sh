@@ -127,9 +127,20 @@ load_metadata_from_import() {
     return 1
 }
 
+default_part_group() {
+    case "$1" in
+        Drums|Percussion|Mallets|Timpani|Glockenspiel|Pauken|Schlagzeug)
+            printf '%s\n' "$INSTRUMENTGROUP"
+            ;;
+        *)
+            printf '%s\n' "Andere"
+            ;;
+    esac
+}
+
 migrate_manifest_from_import() {
     local csv_title csv_pages ignored collection artist albums genre composer
-    local source_type custom_group start_page end_page
+    local source_type custom_group start_page end_page manifest_group
     while IFS=';' read -r csv_title csv_pages ignored collection artist albums genre composer source_type custom_group; do
         [[ "$csv_title" == "title" || -z "$csv_title" ]] && continue
         [[ "$source_type" == "$INSTRUMENTGROUP" && "$custom_group" == "$INSTRUMENTGROUP" ]] && continue
@@ -143,7 +154,9 @@ migrate_manifest_from_import() {
         else
             continue
         fi
-        printf '%s\t%s\t%s\n' "$source_type" "$start_page" "$end_page" >> "$MANIFEST_FILE"
+        manifest_group=$custom_group
+        [[ -z "$manifest_group" || "$manifest_group" == "$INSTRUMENTGROUP" ]] && manifest_group=$(default_part_group "$source_type")
+        printf '%s\t%s\t%s\t%s\n' "$source_type" "$start_page" "$end_page" "$manifest_group" >> "$MANIFEST_FILE"
     done < "$IMPORT_FILE"
 }
 
@@ -172,14 +185,6 @@ if [[ ! -s "$MANIFEST_FILE" && -f "$IMPORT_FILE" ]]; then
     migrate_manifest_from_import
 fi
 
-get_all_images() {
-    local image
-    IMAGE_FILES=()
-    while IFS= read -r image; do
-        [[ -f "$image" ]] && IMAGE_FILES+=("$image")
-    done < <(printf '%s\n' "$SCAN_FOLDER/$TITLETRIM"-*.jpg | sort -V)
-}
-
 get_part_images() {
     local image
     PART_IMAGE_FILES=()
@@ -205,12 +210,13 @@ remove_part_images_range() {
 # Older runs could already contain duplicate manifest rows. Keep the first
 # occurrence and remove the source images belonging to later occurrences.
 deduplicate_manifest() {
-    local manifest_tmp part start_page end_page seen duplicate
+    local manifest_tmp part start_page end_page part_group seen duplicate
     local -a seen_parts=()
 
     manifest_tmp=$(mktemp --tmpdir=. ".scan-parts.XXXXXX")
-    while IFS=$'\t' read -r part start_page end_page; do
+    while IFS=$'\t' read -r part start_page end_page part_group; do
         [[ -z "$part" ]] && continue
+        [[ -z "$part_group" ]] && part_group=$(default_part_group "$part")
         duplicate=0
         for seen in "${seen_parts[@]}"; do
             if [[ "$seen" == "$part" ]]; then
@@ -223,15 +229,15 @@ deduplicate_manifest() {
             continue
         fi
         seen_parts+=("$part")
-        printf '%s\t%s\t%s\n' "$part" "$start_page" "$end_page" >> "$manifest_tmp"
+        printf '%s\t%s\t%s\t%s\n' "$part" "$start_page" "$end_page" "$part_group" >> "$manifest_tmp"
     done < "$MANIFEST_FILE"
     mv -- "$manifest_tmp" "$MANIFEST_FILE"
 }
 
 find_existing_part() {
-    local manifest_part manifest_start manifest_end
+    local manifest_part manifest_start manifest_end manifest_group
     EXISTING_PART_RANGES=()
-    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         if [[ "$manifest_part" == "$STIMME" ]]; then
             EXISTING_PART_RANGES+=("$manifest_start:$manifest_end")
         fi
@@ -239,62 +245,84 @@ find_existing_part() {
 }
 
 replace_manifest_part() {
-    local manifest_tmp manifest_part manifest_start manifest_end replaced
+    local manifest_tmp manifest_part manifest_start manifest_end manifest_group replaced
     replaced=0
     manifest_tmp=$(mktemp --tmpdir=. ".scan-parts.XXXXXX")
-    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         [[ -z "$manifest_part" ]] && continue
+        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
         if [[ "$manifest_part" == "$STIMME" ]]; then
             if (( replaced == 0 )); then
-                printf '%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" >> "$manifest_tmp"
+                printf '%s\t%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" "$PART_GROUP" >> "$manifest_tmp"
                 replaced=1
             fi
         else
-            printf '%s\t%s\t%s\n' "$manifest_part" "$manifest_start" "$manifest_end" >> "$manifest_tmp"
+            printf '%s\t%s\t%s\t%s\n' "$manifest_part" "$manifest_start" "$manifest_end" "$manifest_group" >> "$manifest_tmp"
         fi
     done < "$MANIFEST_FILE"
     if (( replaced == 0 )); then
-        printf '%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" >> "$manifest_tmp"
+        printf '%s\t%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" "$PART_GROUP" >> "$manifest_tmp"
     fi
     mv -- "$manifest_tmp" "$MANIFEST_FILE"
 }
 
-# Rebuild global page numbers in manifest order after replacing a voice.
-renumber_sources_and_manifest() {
-    local manifest_part manifest_start manifest_end start_page end_page
-    local page image new_manifest temp_dir missing
-    local original_stimme=$STIMME
+pdf_page_count() {
+    local pdf_path=$1
+    local key value
 
-    missing=0
-    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
-        [[ -z "$manifest_part" ]] && continue
-        STIMME=$manifest_part
-        get_part_images
-        if (( ${#PART_IMAGE_FILES[@]} == 0 )); then
-            missing=1
-        fi
-    done < "$MANIFEST_FILE"
-    if (( missing )); then
-        STIMME=$original_stimme
-        return 1
+    if command -v pdfinfo >/dev/null 2>&1; then
+        while IFS=: read -r key value; do
+            key="${key#${key%%[![:space:]]*}}"
+            key="${key%${key##*[![:space:]]}}"
+            if [[ "$key" == "Pages" ]]; then
+                value="${value#${value%%[![:space:]]*}}"
+                [[ "$value" =~ ^[0-9]+$ ]] && printf '%s\n' "$value" && return 0
+            fi
+        done < <(pdfinfo "$pdf_path" 2>/dev/null)
     fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import sys; from pypdf import PdfReader; print(len(PdfReader(sys.argv[1]).pages))' \
+            "$pdf_path" 2>/dev/null
+    fi
+}
+
+# Rebuild global page numbers from JPGs and existing voice PDFs. Entries with
+# no usable source are removed so the PDF and CSV always describe one another.
+normalize_manifest_and_sources() {
+    local manifest_part manifest_start manifest_end manifest_group start_page end_page
+    local page image new_manifest temp_dir voice_pages original_stimme
+    local missing_parts=""
+    original_stimme=$STIMME
 
     temp_dir=$(mktemp -d --tmpdir="$SCAN_FOLDER" ".renumber.XXXXXX")
     new_manifest="$temp_dir/manifest.tsv"
+    : > "$temp_dir/files.tsv"
     page=0
 
-    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         [[ -z "$manifest_part" ]] && continue
         STIMME=$manifest_part
         get_part_images
-        start_page=$((page + 1))
-        for image in "${PART_IMAGE_FILES[@]}"; do
-            page=$((page + 1))
-            mv -- "$image" "$temp_dir/$page.jpg"
-            printf '%s\t%s\n' "$page" "$manifest_part" >> "$temp_dir/files.tsv"
-        done
-        end_page=$page
-        printf '%s\t%s\t%s\n' "$manifest_part" "$start_page" "$end_page" >> "$new_manifest"
+        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
+
+        if (( ${#PART_IMAGE_FILES[@]} > 0 )); then
+            start_page=$((page + 1))
+            for image in "${PART_IMAGE_FILES[@]}"; do
+                page=$((page + 1))
+                mv -- "$image" "$temp_dir/$page.jpg"
+                printf '%s\t%s\n' "$page" "$manifest_part" >> "$temp_dir/files.tsv"
+            done
+            end_page=$page
+        elif [[ -f "$TITLE-$manifest_part.pdf" ]] && voice_pages=$(pdf_page_count "$TITLE-$manifest_part.pdf") && [[ "$voice_pages" =~ ^[1-9][0-9]*$ ]]; then
+            start_page=$((page + 1))
+            page=$((page + voice_pages))
+            end_page=$page
+        else
+            missing_parts+=" $manifest_part"
+            continue
+        fi
+        printf '%s\t%s\t%s\t%s\n' "$manifest_part" "$start_page" "$end_page" "$manifest_group" >> "$new_manifest"
     done < "$MANIFEST_FILE"
 
     while IFS=$'\t' read -r new_page manifest_part; do
@@ -304,6 +332,10 @@ renumber_sources_and_manifest() {
     rm -rf -- "$temp_dir"
     PAGE=$page
     STIMME=$original_stimme
+
+    if [[ -n "$missing_parts" ]]; then
+        echo "Warnung: Nicht rekonstruierbare Stimmen wurden aus Manifest, CSV und kombinierten PDFs entfernt:$missing_parts" >&2
+    fi
 }
 
 deduplicate_manifest
@@ -311,7 +343,7 @@ deduplicate_manifest
 # Continue after the last completed part. Incomplete scans are overwritten on
 # the next run instead of creating gaps in the manifest.
 PAGE=0
-while IFS=$'\t' read -r existing_part existing_start existing_end; do
+while IFS=$'\t' read -r existing_part existing_start existing_end existing_group; do
     if [[ "$existing_end" =~ ^[0-9]+$ ]] && (( existing_end > PAGE )); then
         PAGE=$existing_end
     fi
@@ -329,14 +361,15 @@ create_pdf() {
 
 write_import_csv() {
     local last_page=$1
-    local manifest_part manifest_start manifest_end
+    local manifest_part manifest_start manifest_end manifest_group
 
     printf '%s\n' "title;pages;setlists;collections;artist;albums;genres;composer;source types;custom groups" > "$IMPORT_FILE"
-    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         [[ -z "$manifest_part" ]] && continue
+        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
         printf '%s;%s-%s;;%s;%s;;%s;%s;%s;%s\n' \
             "$TITLE" "$manifest_start" "$manifest_end" "$COLLECTION" \
-            "$ARTIST" "$GENRE" "$COMPOSER" "$manifest_part" "$INSTRUMENTGROUP" >> "$IMPORT_FILE"
+            "$ARTIST" "$GENRE" "$COMPOSER" "$manifest_part" "$manifest_group" >> "$IMPORT_FILE"
     done < "$MANIFEST_FILE"
 
     if (( last_page > 0 )); then
@@ -347,12 +380,17 @@ write_import_csv() {
 }
 
 get_combined_inputs() {
-    local manifest_part manifest_start manifest_end original_stimme=$STIMME
+    local part_filter=$1
+    local manifest_part manifest_start manifest_end manifest_group original_stimme=$STIMME
     COMBINED_INPUTS=()
     MISSING_COMBINED_PARTS=()
 
-    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end manifest_group; do
         [[ -z "$manifest_part" ]] && continue
+        [[ -z "$manifest_group" ]] && manifest_group=$(default_part_group "$manifest_part")
+        if [[ "$part_filter" == "schlagwerk" && "$manifest_group" != "$INSTRUMENTGROUP" ]]; then
+            continue
+        fi
         STIMME=$manifest_part
         get_part_images
         if (( ${#PART_IMAGE_FILES[@]} > 0 )); then
@@ -367,22 +405,25 @@ get_combined_inputs() {
     STIMME=$original_stimme
 }
 
-update_combined_pdfs() {
+build_combined_pdf() {
+    local output_path=$1
+    local part_filter=$2
     local base_pdf temp_pdf
-    get_combined_inputs
+    get_combined_inputs "$part_filter"
 
     # If neither source JPGs nor per-voice PDFs are available, use an old
     # combined PDF as the base and append the currently available scans.
     if (( ${#MISSING_COMBINED_PARTS[@]} > 0 )); then
         base_pdf=""
-        if [[ -f "$TOTAL_PDF" ]]; then
+        if [[ "$part_filter" == "schlagwerk" && -f "$GROUP_PDF" ]]; then
+            base_pdf=$GROUP_PDF
+        elif [[ -f "$TOTAL_PDF" ]]; then
             base_pdf=$TOTAL_PDF
         elif [[ -f "$GROUP_PDF" ]]; then
             base_pdf=$GROUP_PDF
         fi
         if [[ -n "$base_pdf" ]]; then
-            get_all_images
-            COMBINED_INPUTS=("$base_pdf" "${IMAGE_FILES[@]}")
+            COMBINED_INPUTS=("$base_pdf" "${COMBINED_INPUTS[@]}")
         else
             echo "Warnung: Folgende Stimmen konnten nicht aus JPG oder eigener PDF rekonstruiert werden: ${MISSING_COMBINED_PARTS[*]}" >&2
         fi
@@ -398,12 +439,13 @@ update_combined_pdfs() {
         return 1
     }
 
-    echo "Aktualisiere $TOTAL_PDF und $GROUP_PDF"
-    mv -- "$temp_pdf" "$TOTAL_PDF"
+    echo "Aktualisiere $output_path"
+    mv -- "$temp_pdf" "$output_path"
+}
 
-    if [[ "$GROUP_PDF" != "$TOTAL_PDF" ]]; then
-        cp -- "$TOTAL_PDF" "$GROUP_PDF"
-    fi
+update_combined_pdfs() {
+    build_combined_pdf "$TOTAL_PDF" "gesamt"
+    build_combined_pdf "$GROUP_PDF" "schlagwerk"
 }
 
 SCANENDE=0
@@ -411,13 +453,28 @@ while (( SCANENDE < 1 )); do
     echo "Which Part are you scanning? (1=Drums, 2=Percussion, 3=Mallets, 4=Timpani, 5=put in text)"
     read -r STIMMECHOICE
     case "$STIMMECHOICE" in
-        1) STIMME="Drums" ;;
-        2) STIMME="Percussion" ;;
-        3) STIMME="Mallets" ;;
-        4) STIMME="Timpani" ;;
+        1)
+            STIMME="Drums"
+            PART_GROUP=$INSTRUMENTGROUP
+            ;;
+        2)
+            STIMME="Percussion"
+            PART_GROUP=$INSTRUMENTGROUP
+            ;;
+        3)
+            STIMME="Mallets"
+            PART_GROUP=$INSTRUMENTGROUP
+            ;;
+        4)
+            STIMME="Timpani"
+            PART_GROUP=$INSTRUMENTGROUP
+            ;;
         5)
             echo "Custom part name: "
             read -r STIMME
+            echo "Instrumentengruppe [Schlagwerk]: "
+            read -r PART_GROUP
+            [[ -z "$PART_GROUP" ]] && PART_GROUP=$INSTRUMENTGROUP
             ;;
         *)
             echo "Wrong input"
@@ -460,9 +517,7 @@ while (( SCANENDE < 1 )); do
             remove_part_images_range "$STIMME" "$existing_start" "$existing_end"
         done
         replace_manifest_part
-        if ! renumber_sources_and_manifest; then
-            echo "Warnung: Nicht alle bisherigen JPG-Quelldateien sind vorhanden; Seiten wurden nicht neu nummeriert." >&2
-        fi
+        normalize_manifest_and_sources
         get_part_images
         if ! create_pdf "$TITLE-$STIMME.pdf" "${PART_IMAGE_FILES[@]}"; then
             exit 1

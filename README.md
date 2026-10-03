@@ -100,6 +100,11 @@ jedes Stueck nach dem Verein und legt die Daten darunter in `Waldenrath/` oder
 - Waldenrath: `Musikverein`
 - Unterbruch: `Unterbruch`
 
+Die `<Titel>-Gesamt.pdf` enthält alle erfassten Stimmen. Die
+`<Titel>-Schlagwerk.pdf` enthält nur Stimmen mit der Instrumentengruppe
+`Schlagwerk`. Bei einer benutzerdefinierten Stimme wird die Instrumentengruppe
+beim Scan abgefragt.
+
 Scanner-ID und Instrumentengruppe werden weiterhin im Abschnitt
 `VARIABLE SECTION START` von `scan-score.sh` angepasst.
 
@@ -121,10 +126,12 @@ Pro Titelordner werden folgende Dateien fortgeschrieben:
 
 - `scans/`: JPG-Quelldateien fuer spaetere PDF-Aktualisierungen.
 - `.scan-metadata`: Artist, Genre und Composer fuer spaetere Laeufe.
-- `.scan-parts.tsv`: Zuordnung von Stimme und Seitenbereich.
+- `.scan-parts.tsv`: Zuordnung von Stimme, Seitenbereich und Instrumentengruppe.
 - `import.csv`: MobileSheets-Import mit allen bisher gescannten Stimmen.
 - `<Titel>-Gesamt.pdf`: alle bisher gescannten Seiten in Scan-Reihenfolge.
 - `<Titel>-Schlagwerk.pdf`: die Schlagwerk-Gesamtdatei.
 
 Die JPG-Quelldateien bleiben absichtlich im Unterordner `scans/`. Sie werden
 fuer die Neuerstellung der kombinierten PDFs bei spaeteren Scans benoetigt.
+Wenn JPGs fehlen, werden vorhandene Stimmen-PDFs zur Seitenzaehlung verwendet;
+Stimmen ohne rekonstruierbare Quelle werden aus CSV und kombinierten PDFs entfernt.
