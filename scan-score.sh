@@ -1,18 +1,34 @@
 #!/usr/bin/env bash
 #### VARIABLE SECTION START ###
-# Some values
-COLLECTION="Musikverein"
-INSTRUMENTGROUP="Schlagwerk" # Used for the combined instrument-group PDF.
-
 # Init Scanner. Use the scanner ID found with "scanimage --list-devices".
 SCANNER="pixma:04A91913_597E72"
-# Output Folder
-OUTPUTFOLDER="/home/chaapp/onedrive/Notenordner/Musikverein"
-
+INSTRUMENTGROUP="Schlagwerk" # Used for the combined instrument-group PDF.
 #### VARIABLE SECTION END ###
 
-if ! cd -- "$OUTPUTFOLDER"; then
-    echo "Fehler: Ausgabeordner nicht gefunden: $OUTPUTFOLDER" >&2
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ENV_FILE="$SCRIPT_DIR/.env"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "Fehler: $ENV_FILE fehlt. Lege die Datei anhand von .env.example an." >&2
+    exit 1
+fi
+
+# Read only the supported setting instead of executing the .env file.
+while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+    env_line="${env_line#${env_line%%[![:space:]]*}}"
+    [[ -z "$env_line" || "$env_line" == \#* ]] && continue
+    [[ "$env_line" =~ ^OUTPUT_PATH[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
+    OUTPUT_PATH=${BASH_REMATCH[1]}
+    OUTPUT_PATH="${OUTPUT_PATH#${OUTPUT_PATH%%[![:space:]]*}}"
+    OUTPUT_PATH="${OUTPUT_PATH%${OUTPUT_PATH##*[![:space:]]}}"
+    OUTPUT_PATH=${OUTPUT_PATH#\"}
+    OUTPUT_PATH=${OUTPUT_PATH%\"}
+    OUTPUT_PATH=${OUTPUT_PATH#\'}
+    OUTPUT_PATH=${OUTPUT_PATH%\'}
+done < "$ENV_FILE"
+
+if [[ -z "${OUTPUT_PATH:-}" ]]; then
+    echo "Fehler: OUTPUT_PATH ist in $ENV_FILE nicht gesetzt." >&2
     exit 1
 fi
 
@@ -20,6 +36,30 @@ echo "Song-Title: "
 read -r TITLE
 if [[ -z "$TITLE" ]]; then
     echo "Fehler: Der Titel darf nicht leer sein." >&2
+    exit 1
+fi
+
+echo "Verein: (1=Waldenrath, 2=Unterbruch)"
+read -r LOCATION_CHOICE
+case "$LOCATION_CHOICE" in
+    1)
+        LOCATION="Waldenrath"
+        COLLECTION="Musikverein"
+        ;;
+    2)
+        LOCATION="Unterbruch"
+        COLLECTION="Unterbruch"
+        ;;
+    *)
+        echo "Fehler: Bitte 1 fuer Waldenrath oder 2 fuer Unterbruch eingeben." >&2
+        exit 1
+        ;;
+esac
+
+OUTPUTFOLDER="$OUTPUT_PATH/$LOCATION"
+mkdir -p -- "$OUTPUTFOLDER"
+if ! cd -- "$OUTPUTFOLDER"; then
+    echo "Fehler: Ausgabeordner nicht erreichbar: $OUTPUTFOLDER" >&2
     exit 1
 fi
 
@@ -132,15 +172,6 @@ if [[ ! -s "$MANIFEST_FILE" && -f "$IMPORT_FILE" ]]; then
     migrate_manifest_from_import
 fi
 
-# Continue after the last completed part. Incomplete scans are overwritten on
-# the next run instead of creating gaps in the manifest.
-PAGE=0
-while IFS=$'\t' read -r existing_part existing_start existing_end; do
-    if [[ "$existing_end" =~ ^[0-9]+$ ]] && (( existing_end > PAGE )); then
-        PAGE=$existing_end
-    fi
-done < "$MANIFEST_FILE"
-
 get_all_images() {
     local image
     IMAGE_FILES=()
@@ -156,6 +187,135 @@ get_part_images() {
         [[ -f "$image" ]] && PART_IMAGE_FILES+=("$image")
     done < <(printf '%s\n' "$SCAN_FOLDER/$TITLETRIM"-*-"$STIMME".jpg | sort -V)
 }
+
+remove_part_images_range() {
+    local part=$1
+    local start_page=$2
+    local end_page=$3
+    local page
+
+    if [[ ! "$start_page" =~ ^[0-9]+$ || ! "$end_page" =~ ^[0-9]+$ ]]; then
+        return
+    fi
+    for ((page = start_page; page <= end_page; page++)); do
+        rm -f -- "$SCAN_FOLDER/$TITLETRIM-$page-$part.jpg"
+    done
+}
+
+# Older runs could already contain duplicate manifest rows. Keep the first
+# occurrence and remove the source images belonging to later occurrences.
+deduplicate_manifest() {
+    local manifest_tmp part start_page end_page seen duplicate
+    local -a seen_parts=()
+
+    manifest_tmp=$(mktemp --tmpdir=. ".scan-parts.XXXXXX")
+    while IFS=$'\t' read -r part start_page end_page; do
+        [[ -z "$part" ]] && continue
+        duplicate=0
+        for seen in "${seen_parts[@]}"; do
+            if [[ "$seen" == "$part" ]]; then
+                duplicate=1
+                break
+            fi
+        done
+        if (( duplicate )); then
+            remove_part_images_range "$part" "$start_page" "$end_page"
+            continue
+        fi
+        seen_parts+=("$part")
+        printf '%s\t%s\t%s\n' "$part" "$start_page" "$end_page" >> "$manifest_tmp"
+    done < "$MANIFEST_FILE"
+    mv -- "$manifest_tmp" "$MANIFEST_FILE"
+}
+
+find_existing_part() {
+    local manifest_part manifest_start manifest_end
+    EXISTING_PART_RANGES=()
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+        if [[ "$manifest_part" == "$STIMME" ]]; then
+            EXISTING_PART_RANGES+=("$manifest_start:$manifest_end")
+        fi
+    done < "$MANIFEST_FILE"
+}
+
+replace_manifest_part() {
+    local manifest_tmp manifest_part manifest_start manifest_end replaced
+    replaced=0
+    manifest_tmp=$(mktemp --tmpdir=. ".scan-parts.XXXXXX")
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+        [[ -z "$manifest_part" ]] && continue
+        if [[ "$manifest_part" == "$STIMME" ]]; then
+            if (( replaced == 0 )); then
+                printf '%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" >> "$manifest_tmp"
+                replaced=1
+            fi
+        else
+            printf '%s\t%s\t%s\n' "$manifest_part" "$manifest_start" "$manifest_end" >> "$manifest_tmp"
+        fi
+    done < "$MANIFEST_FILE"
+    if (( replaced == 0 )); then
+        printf '%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" >> "$manifest_tmp"
+    fi
+    mv -- "$manifest_tmp" "$MANIFEST_FILE"
+}
+
+# Rebuild global page numbers in manifest order after replacing a voice.
+renumber_sources_and_manifest() {
+    local manifest_part manifest_start manifest_end start_page end_page
+    local page image new_manifest temp_dir missing
+    local original_stimme=$STIMME
+
+    missing=0
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+        [[ -z "$manifest_part" ]] && continue
+        STIMME=$manifest_part
+        get_part_images
+        if (( ${#PART_IMAGE_FILES[@]} == 0 )); then
+            missing=1
+        fi
+    done < "$MANIFEST_FILE"
+    if (( missing )); then
+        STIMME=$original_stimme
+        return 1
+    fi
+
+    temp_dir=$(mktemp -d --tmpdir="$SCAN_FOLDER" ".renumber.XXXXXX")
+    new_manifest="$temp_dir/manifest.tsv"
+    page=0
+
+    while IFS=$'\t' read -r manifest_part manifest_start manifest_end; do
+        [[ -z "$manifest_part" ]] && continue
+        STIMME=$manifest_part
+        get_part_images
+        start_page=$((page + 1))
+        for image in "${PART_IMAGE_FILES[@]}"; do
+            page=$((page + 1))
+            mv -- "$image" "$temp_dir/$page.jpg"
+            printf '%s\t%s\n' "$page" "$manifest_part" >> "$temp_dir/files.tsv"
+        done
+        end_page=$page
+        printf '%s\t%s\t%s\n' "$manifest_part" "$start_page" "$end_page" >> "$new_manifest"
+    done < "$MANIFEST_FILE"
+
+    while IFS=$'\t' read -r new_page manifest_part; do
+        mv -- "$temp_dir/$new_page.jpg" "$SCAN_FOLDER/$TITLETRIM-$new_page-$manifest_part.jpg"
+    done < "$temp_dir/files.tsv"
+    mv -- "$new_manifest" "$MANIFEST_FILE"
+    rm -rf -- "$temp_dir"
+    PAGE=$page
+    STIMME=$original_stimme
+}
+
+deduplicate_manifest
+
+# Continue after the last completed part. Incomplete scans are overwritten on
+# the next run instead of creating gaps in the manifest.
+PAGE=0
+while IFS=$'\t' read -r existing_part existing_start existing_end; do
+    if [[ "$existing_end" =~ ^[0-9]+$ ]] && (( existing_end > PAGE )); then
+        PAGE=$existing_end
+    fi
+done < "$MANIFEST_FILE"
 
 create_pdf() {
     local output_path=$1
@@ -249,6 +409,11 @@ while (( SCANENDE < 1 )); do
             ;;
     esac
 
+    find_existing_part
+    if (( ${#EXISTING_PART_RANGES[@]} > 0 )); then
+        echo "Stimme '$STIMME' existiert bereits und wird nach dem Scan ersetzt."
+    fi
+
     STIMMEPAGE=0
     STIMMEPAGESTART=$((PAGE + 1))
     while :; do
@@ -274,11 +439,18 @@ while (( SCANENDE < 1 )); do
 
         echo "Part is ready, going on"
         STIMMEPAGEENDE=$PAGE
+        for existing_range in "${EXISTING_PART_RANGES[@]}"; do
+            IFS=: read -r existing_start existing_end <<< "$existing_range"
+            remove_part_images_range "$STIMME" "$existing_start" "$existing_end"
+        done
+        replace_manifest_part
+        if ! renumber_sources_and_manifest; then
+            echo "Warnung: Nicht alle bisherigen JPG-Quelldateien sind vorhanden; Seiten wurden nicht neu nummeriert." >&2
+        fi
         get_part_images
         if ! create_pdf "$TITLE-$STIMME.pdf" "${PART_IMAGE_FILES[@]}"; then
             exit 1
         fi
-        printf '%s\t%s\t%s\n' "$STIMME" "$STIMMEPAGESTART" "$STIMMEPAGEENDE" >> "$MANIFEST_FILE"
         write_import_csv "$PAGE"
         break
     done

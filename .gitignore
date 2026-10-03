@@ -20,6 +20,7 @@ roles/qtile/files/rd-pc-work/qtile/__pycache__/config.cpython-38.pyc
 
 **/__pycache__
 *.pyc
+.env
 
 # Emcas
 vault-pssword.gpg
@@ -50,7 +51,6 @@ chaapp.el
 vault_pass
 vault-password.gpg
 **/sync-privatetodos.sh
-
 
 
 

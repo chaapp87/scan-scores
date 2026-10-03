@@ -86,9 +86,22 @@ Stueckzahlen angepasst werden.
 
 ## Scanner-Skript
 
-Vor der ersten Nutzung die Variablen im Abschnitt `VARIABLE SECTION START`
-von `scan-score.sh` anpassen, insbesondere Scanner-ID, Ausgabeordner,
-Sammlung und Instrumentengruppe.
+Vor der ersten Nutzung `.env.example` nach `.env` kopieren und den lokalen
+Basisordner fuer die Ausgaben eintragen. `.env` wird nicht versioniert.
+
+```bash
+cp .env.example .env
+```
+
+Der konfigurierte `OUTPUT_PATH` ist der Basisordner. Das Skript fragt fuer
+jedes Stueck nach dem Verein und legt die Daten darunter in `Waldenrath/` oder
+`Unterbruch/` an. Die MobileSheets-Collection wird automatisch gesetzt:
+
+- Waldenrath: `Musikverein`
+- Unterbruch: `Unterbruch`
+
+Scanner-ID und Instrumentengruppe werden weiterhin im Abschnitt
+`VARIABLE SECTION START` von `scan-score.sh` angepasst.
 
 ```bash
 chmod 744 scan-score.sh
@@ -101,6 +114,8 @@ Das Skript kann fuer dasselbe Stueck mehrfach ausgefuehrt werden. Beim zweiten
 Lauf den bereits vorhandenen Titelordner auswaehlen und die vorhandenen
 Metadaten uebernehmen. Der letzte abgeschlossene Seitenstand wird aus
 `.scan-parts.tsv` fortgesetzt; neue Stimmen werden an die Gesamt-PDF angehaengt.
+Wird eine bereits vorhandene Stimme erneut ausgewaehlt, ersetzt der neue Scan
+die bisherige Stimme statt einen zweiten Eintrag anzulegen.
 
 Pro Titelordner werden folgende Dateien fortgeschrieben:
 
