@@ -4,8 +4,10 @@ Dieses Repository verwaltet den technischen Workflow fuer die private
 Notenbibliothek und MobileSheets. Lies vor jeder Aufgabe:
 
 1. `docs/library-context.md`
-2. `docs/mobileSheets-master.md`
-3. bei Scan-Aenderungen die relevanten Abschnitte in `README.md`
+2. `docs/session-context.md`
+3. `docs/migration-status.md`
+4. `docs/mobileSheets-master.md`
+5. bei Scan-Aenderungen die relevanten Abschnitte in `README.md`
 
 ## Rollen der Systeme
 
@@ -33,6 +35,9 @@ Notenbibliothek und MobileSheets. Lies vor jeder Aufgabe:
   oder Dateisystemaktionen brauchen eine ausdrueckliche Bestaetigung.
 - Wenn der Mount der Noten-Library nicht erreichbar ist, nicht raten. Pfad
   anzeigen und nach dem korrekten Mount fragen.
+- Historische Aussagen immer gegen `docs/migration-status.md` pruefen. Einen
+  als vorbereitet markierten CSV-Stand nicht als auf dem Master abgenommen
+  darstellen.
 
 ## Standardarbeitsweise
 

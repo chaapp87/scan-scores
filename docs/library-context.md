@@ -19,6 +19,10 @@ Der lokale Pfad zur Seafile-Library wird ausschliesslich in `.env` als
 `OUTPUT_PATH` gesetzt. Der konkrete Pfad ist installationsabhaengig und darf
 nicht in Git festgeschrieben werden.
 
+Der dokumentierte Zielpfad fuer die Seafile-CLI ist `~/Sync/mv-noten`. Auf dem
+Notebook muss dieser Pfad vor dem ersten Scan mit `seaf-cli status` verifiziert
+werden. Zugangsdaten und Tokens werden nur lokal bzw. interaktiv verwendet.
+
 ## Verzeichnisstruktur
 
 Das Scan-Skript legt unter `OUTPUT_PATH` automatisch diese Bereiche an:
@@ -62,6 +66,10 @@ title;pages;setlists;collections;artist;albums;genres;composer;source types;cust
 - Die korrigierten CSV-Dateien liegen unter
   `mv-noten/MobileSheets-Migration-2026-10-15/corrected/`.
 - Waldenrath ist noch nicht vollstaendig migriert.
+
+Der ausfuehrliche Titelstatus steht in `docs/migration-status.md`. Die
+Migrationsnotiz unterscheidet zwischen vorbereiteten CSVs und dem spaeteren
+Import-/Annotationstest auf dem Mastergeraet.
 
 ## Prioritaeten bei Unklarheiten
 

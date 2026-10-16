@@ -14,14 +14,20 @@ Silverbullet-/Obsidian-Vault wird nicht benoetigt.
 
 1. WSL 2 und Scanner-Zugriff einrichten.
 2. Dieses Repository nach `~/git/scan-scores` auschecken.
-3. Abhaengigkeiten gemaess `README.md` installieren.
-4. `.env.example` nach `.env` kopieren.
-5. `OUTPUT_PATH` in `.env` auf das lokale Mount der Seafile-Library `mv-noten`
+3. Seafile CLI einrichten und `mv-noten` nach `~/Sync/mv-noten` synchronisieren.
+4. Mit `seaf-cli status` pruefen, dass die Library vollstaendig und aktuell ist.
+5. Abhaengigkeiten gemaess `README.md` installieren.
+6. `.env.example` nach `.env` kopieren.
+7. `OUTPUT_PATH` in `.env` auf das lokale Mount der Seafile-Library `mv-noten`
    setzen. `.env` niemals committen.
-6. Mit `scanimage --list-devices` die Scanner-ID pruefen und bei Bedarf den
+8. Mit `scanimage --list-devices` die Scanner-ID pruefen und bei Bedarf den
    Wert `SCANNER` in `scan-score.sh` anpassen.
-7. MobileSheets fuer Windows installieren oder aktualisieren.
-8. Vor der ersten Migration aus MobileSheets ein `.msb`-Backup exportieren.
+9. MobileSheets fuer Windows installieren oder aktualisieren.
+10. Vor der ersten Migration aus MobileSheets ein `.msb`-Backup exportieren.
+
+Die Seafile-Anmeldung und der Library-Schluessel gehoeren nicht in dieses
+Repository. Bei Problemen zuerst die lokale Seafile-Konfiguration und den
+Sync-Status pruefen, nicht Tokens oder Passwoerter in `.env` dokumentieren.
 
 ## Neuer Scan
 

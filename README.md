@@ -10,6 +10,8 @@ Workflow und der Kontext fuer lokale KI-Sessions stehen in:
 
 - `AGENTS.md` - Regeln fuer lokale KI-Sessions
 - `docs/library-context.md` - Datenrollen, Ablage und Benennung
+- `docs/session-context.md` - Entscheidungen und historischer Projektkontext
+- `docs/migration-status.md` - bearbeitete und offene Titelbereiche
 - `docs/mobileSheets-master.md` - Scan-, Migrations- und Testablauf
 
 Die Notendaten liegen ausserhalb des Repositories in der gemounteten Seafile-
