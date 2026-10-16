@@ -381,13 +381,13 @@ write_import_csv() {
         [[ -z "$manifest_part" ]] && continue
         manifest_group=$(resolve_part_group "$manifest_part" "$manifest_group")
         printf '%s;%s-%s;;%s;%s;;%s;%s;%s;%s\n' \
-            "$TITLE" "$manifest_start" "$manifest_end" "$COLLECTION" \
+            "$TITLE [$manifest_part]" "$manifest_start" "$manifest_end" "$COLLECTION" \
             "$ARTIST" "$GENRE" "$COMPOSER" "$manifest_part" "$manifest_group" >> "$IMPORT_FILE"
     done < "$MANIFEST_FILE"
 
     if (( last_page > 0 )); then
         printf '%s;1-%s;;%s;%s;;%s;%s;%s;%s\n' \
-            "$TITLE" "$last_page" "$COLLECTION" "$ARTIST" "$GENRE" \
+            "$TITLE [Gesamt]" "$last_page" "$COLLECTION" "$ARTIST" "$GENRE" \
             "$COMPOSER" "$INSTRUMENTGROUP" "$INSTRUMENTGROUP" >> "$IMPORT_FILE"
     fi
 }

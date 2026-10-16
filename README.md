@@ -3,6 +3,18 @@
 Werkzeuge zum Scannen, Zusammenfuehren und Drucken von Noten fuer
 Blasorchester und MobileSheets.
 
+## Arbeitskontext
+
+Das Windows-Notebook ist das MobileSheets-Mastergeraet. Der technische
+Workflow und der Kontext fuer lokale KI-Sessions stehen in:
+
+- `AGENTS.md` - Regeln fuer lokale KI-Sessions
+- `docs/library-context.md` - Datenrollen, Ablage und Benennung
+- `docs/mobileSheets-master.md` - Scan-, Migrations- und Testablauf
+
+Die Notendaten liegen ausserhalb des Repositories in der gemounteten Seafile-
+Library `mv-noten`. Der lokale Pfad wird nur in `.env` gesetzt.
+
 ## Werkzeuge
 
 - `scan-score.sh`: Scannt einzelne Stimmen und erzeugt PDFs sowie eine
@@ -104,6 +116,20 @@ Die `<Titel>-Gesamt.pdf` enthält alle erfassten Stimmen. Die
 `<Titel>-Schlagwerk.pdf` enthält nur Stimmen mit der Instrumentengruppe
 `Schlagwerk`. Bei einer benutzerdefinierten Stimme wird die Instrumentengruppe
 beim Scan abgefragt.
+
+### MobileSheets-Import
+
+Die erzeugte `import.csv` verwendet eindeutige MobileSheets-Titel, damit die
+Library-Synchronisation wiederholte Titel-/Datei-Kombinationen unterscheiden
+kann:
+
+- Stimme: `<Titel> [<Stimme>]`, z. B. `Adventure [Timpani]`
+- Gesamtdatei: `<Titel> [Gesamt]`
+
+Dieses Format darf nicht wieder auf den reinen Stücktitel zurückgestellt
+werden. `source types` und `custom groups` bleiben zusätzlich als Metadaten
+erhalten. Bei einer Migration bestehender CSV-Dateien kann
+`scripts/mobilesheets/qualify_import_titles.py` verwendet werden.
 
 Scanner-ID und Instrumentengruppe werden weiterhin im Abschnitt
 `VARIABLE SECTION START` von `scan-score.sh` angepasst.
